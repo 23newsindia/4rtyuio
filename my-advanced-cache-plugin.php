@@ -20,6 +20,9 @@ if (file_exists(MACP_PLUGIN_DIR . 'vendor/autoload.php')) {
 require_once MACP_PLUGIN_DIR . 'includes/class-macp-debug.php';
 require_once MACP_PLUGIN_DIR . 'includes/class-macp-filesystem.php';
 require_once MACP_PLUGIN_DIR . 'includes/class-macp-url-helper.php';
+require_once MACP_PLUGIN_DIR . 'includes/css/test/class-macp-css-test-handler.php';
+
+
 
 
 // Add to the existing requires section:

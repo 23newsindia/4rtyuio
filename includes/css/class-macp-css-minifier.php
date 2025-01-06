@@ -23,9 +23,21 @@ class MACP_CSS_Minifier {
         }
     }
 
-    public function process_stylesheet($tag) {
+    public function process_stylesheet($tag, $handle = '', $href = '', $media = '') {
         // Skip if already minified
         if (strpos($tag, 'data-minify="1"') !== false) {
+            return $tag;
+        }
+
+        // Skip certain handles that should not be minified
+        $excluded_handles = [
+            'admin-bar',
+            'dashicons',
+            'wp-admin',
+            'wp-includes'
+        ];
+
+        if ($handle && in_array($handle, $excluded_handles)) {
             return $tag;
         }
 
