@@ -1,169 +1,138 @@
 <?php
-/**
- * Handles the actual critical CSS generation process
- */
-class MACP_Critical_CSS_Processor {
+class MACP_CSS_Processor {
+    private $used_css_table;
     private $filesystem;
-    private $critical_css_path;
+    private $cache_path;
 
-    public function __construct($filesystem) {
-        $this->filesystem = $filesystem;
-        $this->critical_css_path = WP_CONTENT_DIR . '/cache/macp/critical-css/';
+    public function __construct() {
+        $this->used_css_table = new MACP_Used_CSS_Table();
+        $this->filesystem = new MACP_Filesystem();
+        $this->cache_path = WP_CONTENT_DIR . '/cache/macp/used-css/';
+        
+        if (!file_exists($this->cache_path)) {
+            wp_mkdir_p($this->cache_path);
+        }
     }
 
-    public function generate($url, $path, $params = []) {
-        if (!$this->ensure_directory()) {
-            return new WP_Error(
-                'cpcss_generation_failed',
-                __('Critical CSS directory is not writable', 'my-advanced-cache-plugin')
-            );
-        }
-
-        $css = $this->get_critical_css($url, $params);
+    public function process($url, $html) {
+        global $wpdb;
         
-        if (is_wp_error($css)) {
-            return $css;
+        // Extract all CSS
+        $css_files = $this->extract_css_files($html);
+        $used_selectors = $this->extract_used_selectors($html);
+        
+        $optimized_css = '';
+        foreach ($css_files as $file) {
+            $css_content = $this->get_css_content($file);
+            if (!$css_content) {
+                continue;
+            }
+            
+            $optimized_css .= $this->remove_unused_css($css_content, $used_selectors);
         }
 
-        $file_path = $this->critical_css_path . $path;
-        $result = $this->filesystem->put_contents($file_path, $css);
-
-        if (!$result) {
-            return new WP_Error(
-                'cpcss_generation_failed',
-                sprintf(
-                    /* translators: %s is the file path */
-                    __('Could not write critical CSS to file: %s', 'my-advanced-cache-plugin'),
-                    $file_path
-                )
+        // Save optimized CSS
+        $hash = md5($optimized_css);
+        $file_path = $this->cache_path . $hash . '.css';
+        
+        if ($this->filesystem->write_file($file_path, $optimized_css)) {
+            $wpdb->insert(
+                $wpdb->prefix . 'macp_used_css',
+                [
+                    'url' => $url,
+                    'css' => $optimized_css,
+                    'hash' => $hash,
+                    'status' => 'completed'
+                ],
+                ['%s', '%s', '%s', '%s']
             );
         }
 
-        return [
-            'code' => 'generation_successful',
-            'message' => sprintf(
-                /* translators: %s is the path type */
-                __('Successfully generated critical CSS for %s', 'my-advanced-cache-plugin'),
-                $params['item_type']
-            )
-        ];
+        return $optimized_css;
     }
 
-    private function get_critical_css($url, $params) {
-        // Get all CSS files from the URL
-        $response = wp_remote_get($url);
+    private function extract_css_files($html) {
+        $css_files = [];
         
-        if (is_wp_error($response)) {
-            return new WP_Error(
-                'cpcss_generation_failed',
-                sprintf(
-                    /* translators: %s is the URL */
-                    __('Could not fetch URL: %s', 'my-advanced-cache-plugin'),
-                    $url
-                )
-            );
+        // Extract <link> tags
+        preg_match_all('/<link[^>]*rel=["\']stylesheet["\'][^>]*href=["\']([^"\']+)["\'][^>]*>/i', $html, $matches);
+        
+        if (!empty($matches[1])) {
+            foreach ($matches[1] as $file) {
+                if (strpos($file, '//') === 0) {
+                    $file = 'https:' . $file;
+                }
+                $css_files[] = $file;
+            }
         }
 
-        $html = wp_remote_retrieve_body($response);
-        
-        if (empty($html)) {
-            return new WP_Error(
-                'cpcss_generation_failed',
-                __('Empty response from URL', 'my-advanced-cache-plugin')
-            );
-        }
-
-        // Extract and process CSS
-        $critical_css = $this->extract_critical_css($html, $params);
-        
-        if (is_wp_error($critical_css)) {
-            return $critical_css;
-        }
-
-        return $critical_css;
+        return array_unique($css_files);
     }
 
-    private function extract_critical_css($html, $params) {
+    private function extract_used_selectors($html) {
+        $selectors = [];
+        
         // Create DOM document
         $dom = new DOMDocument();
         @$dom->loadHTML($html);
-
-        // Get all CSS links and inline styles
-        $links = $dom->getElementsByTagName('link');
-        $styles = $dom->getElementsByTagName('style');
         
-        $critical_css = '';
-
-        // Process external stylesheets
-        foreach ($links as $link) {
-            if ($link->getAttribute('rel') !== 'stylesheet') {
-                continue;
+        // Get all elements with class or ID
+        $xpath = new DOMXPath($dom);
+        $elements = $xpath->query('//*[@class or @id]');
+        
+        foreach ($elements as $element) {
+            // Extract classes
+            if ($element->hasAttribute('class')) {
+                $classes = explode(' ', $element->getAttribute('class'));
+                foreach ($classes as $class) {
+                    if ($class = trim($class)) {
+                        $selectors[] = '.' . $class;
+                    }
+                }
             }
-
-            $href = $link->getAttribute('href');
-            if (empty($href)) {
-                continue;
-            }
-
-            $css_content = $this->get_external_css($href);
-            if (!is_wp_error($css_content)) {
-                $critical_css .= $this->process_css($css_content, $params);
+            
+            // Extract IDs
+            if ($element->hasAttribute('id')) {
+                $selectors[] = '#' . $element->getAttribute('id');
             }
         }
 
-        // Process inline styles
-        foreach ($styles as $style) {
-            $critical_css .= $this->process_css($style->nodeValue, $params);
-        }
-
-        if (empty($critical_css)) {
-            return new WP_Error(
-                'cpcss_generation_failed',
-                __('No CSS content found', 'my-advanced-cache-plugin')
-            );
-        }
-
-        return $critical_css;
+        return array_unique($selectors);
     }
 
-    private function get_external_css($url) {
+    private function get_css_content($url) {
         if (strpos($url, '//') === 0) {
             $url = 'https:' . $url;
-        } elseif (strpos($url, '/') === 0) {
-            $url = home_url($url);
         }
 
         $response = wp_remote_get($url);
-        
         if (is_wp_error($response)) {
-            return $response;
+            return false;
         }
 
         return wp_remote_retrieve_body($response);
     }
 
-    private function process_css($css, $params) {
+    private function remove_unused_css($css, $used_selectors) {
         // Remove comments
         $css = preg_replace('!/\*[^*]*\*+([^/][^*]*\*+)*/!', '', $css);
         
-        // Remove whitespace
-        $css = preg_replace('/\s+/', ' ', $css);
+        // Split into rules
+        preg_match_all('/([^{]+){[^}]*}/s', $css, $matches);
         
-        // Remove media queries if mobile
-        if (!empty($params['is_mobile'])) {
-            $css = preg_replace('/@media\s+[^{]+\{([^{}]*\{[^{}]*\})*[^{}]*\}/i', '', $css);
-        }
-
-        return $css;
-    }
-
-    private function ensure_directory() {
-        if (!$this->filesystem->is_dir($this->critical_css_path)) {
-            if (!$this->filesystem->mkdir($this->critical_css_path)) {
-                return false;
+        $used_css = '';
+        foreach ($matches[0] as $rule) {
+            $selector = trim(preg_replace('/\s*{.*$/s', '', $rule));
+            
+            // Keep if selector is used
+            foreach ($used_selectors as $used_selector) {
+                if (strpos($selector, $used_selector) !== false) {
+                    $used_css .= $rule . "\n";
+                    break;
+                }
             }
         }
 
-        return $this->filesystem->is_writable($this->critical_css_path);
+        return $used_css;
     }
 }
