@@ -61,6 +61,10 @@ require_once MACP_PLUGIN_DIR . 'includes/css/class-macp-css-extractor.php';
 require_once MACP_PLUGIN_DIR . 'includes/css/class-macp-css-minifier.php';
 
 
+// In my-advanced-cache-plugin.php, add:
+require_once MACP_PLUGIN_DIR . 'includes/css/test/class-macp-css-test-service.php';
+
+
 
 // Load JavaScript optimization classes
 require_once MACP_PLUGIN_DIR . 'includes/js/class-macp-script-attributes.php';
@@ -93,6 +97,13 @@ require_once MACP_PLUGIN_DIR . 'includes/critical-css/class-macp-critical-css-ge
 require_once MACP_PLUGIN_DIR . 'includes/critical-css/class-macp-css-fetcher.php';
 require_once MACP_PLUGIN_DIR . 'includes/critical-css/class-macp-css-processor.php';
 require_once MACP_PLUGIN_DIR . 'includes/critical-css/class-macp-critical-css.php';
+
+// Load CSS parsers
+require_once MACP_PLUGIN_DIR . 'includes/css/parsers/class-macp-css-selector-parser.php';
+
+// Then load CSS extractor
+require_once MACP_PLUGIN_DIR . 'includes/css/class-macp-css-extractor.php';
+
 
 require_once MACP_PLUGIN_DIR . 'includes/redis/class-macp-redis-primer.php';
 

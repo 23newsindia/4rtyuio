@@ -1,29 +1,24 @@
 <?php
 class MACP_CSS_Test_Ajax {
-    private $test_handler;
+    private $test_service;
     
     public function __construct() {
-        $this->test_handler = new MACP_CSS_Test_Handler();
+        $this->test_service = new MACP_CSS_Test_Service();
         add_action('wp_ajax_macp_test_unused_css', [$this, 'handle_test_request']);
     }
 
     public function handle_test_request() {
         try {
-            // Verify nonce
             if (!check_ajax_referer('macp_admin_nonce', 'nonce', false)) {
                 throw new Exception('Invalid security token');
             }
 
-            // Verify user capabilities
             if (!current_user_can('manage_options')) {
                 throw new Exception('Unauthorized access');
             }
 
-            // Get and validate URL
             $url = isset($_POST['url']) ? esc_url_raw($_POST['url']) : home_url('/');
-            
-            // Run the test
-            $results = $this->test_handler->test_url($url);
+            $results = $this->test_service->test_url($url);
             
             wp_send_json_success([
                 'results' => $results,

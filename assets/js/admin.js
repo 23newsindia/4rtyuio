@@ -175,6 +175,14 @@
             .toggleClass('active inactive')
             .text(value ? 'Cache Enabled' : 'Cache Disabled');
     }
+  
+ error: function(jqXHR, textStatus, errorThrown) {
+    console.error('AJAX Error:', textStatus, errorThrown);
+    var errorMessage = jqXHR.responseJSON && jqXHR.responseJSON.data && jqXHR.responseJSON.data.message 
+        ? jqXHR.responseJSON.data.message 
+        : 'Failed to test unused CSS removal: ' + errorThrown;
+    displayError(errorMessage, $status);
+} 
 
     // Initialize when DOM is ready
     $(document).ready(function() {
